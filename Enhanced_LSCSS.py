@@ -13,9 +13,14 @@ import os
 from matplotlib.pyplot import cm
 import tracemalloc
 
+np.random.seed(42) # Setting seed
 os.environ["LOKY_MAX_CPU_COUNT"] = "12"  
 tracemalloc.start()
 
+results_dir = "Enhanced_LSCSS_Results"
+if not os.path.exists(results_dir):
+    os.makedirs(results_dir)
+    print(f"Created directory: {results_dir}")
 
 # Memory usage tracking function
 def get_memory_usage():
@@ -187,7 +192,7 @@ def load_mnist():
     return X, y
 
 # Function to visualize selected columns as images
-def visualize_columns(X, pixel_mask, num_examples=5):
+def visualize_columns(X, pixel_mask, num_examples=5, title = "Selected Pixels"):
     # Randomly select indices from the dataset
     indices = np.random.choice(X.shape[0], num_examples, replace=False)
     print("Selected indices:", indices)
@@ -221,9 +226,10 @@ def visualize_columns(X, pixel_mask, num_examples=5):
         axs[i, 2].axis('off')
 
     plt.tight_layout()
-    plt.imshow(img, cmap='gray')
-
-  
+    filename = os.path.join(results_dir, f"{title.replace(' ', '_')}.png")
+    
+    # plt.imshow(img, cmap='gray')
+    plt.savefig(filename)
 
 # Function to visualize reconstruction error over iterations
 def visualize_error_curve(errors, title):
@@ -233,11 +239,12 @@ def visualize_error_curve(errors, title):
     plt.xlabel('Iteration')
     plt.ylabel('Reconstruction Error')
     plt.grid(True)
-    plt.savefig(f"{title.replace(' ', '_')}.png")
-    plt.show()
+
+    filename = os.path.join(results_dir, f"{title.replace(' ', '_')}.png")
+    plt.savefig(filename)
+    #plt.show()
 
 # Function to evaluate the algorithm with classification
-
 def evaluate_classification(X_train_original, X_train_projected, X_test_original, X_test_projected, y_train, y_test):
     print("\nEvaluating classification performance...")
 
@@ -267,38 +274,8 @@ def evaluate_classification(X_train_original, X_train_projected, X_test_original
         "projected_time": projected_time
     }
 
-def main():
-    # Load and preprocess MNIST
-    X, y = load_mnist()
-    
-    # Scale the data
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-    
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_scaled, y, test_size=0.2, random_state=42
-    )
-    
-    print(f"Data shapes - X_train: {X_train.shape}, X_test: {X_test.shape}")
-    
-    # For efficiency, we'll use a subset of the data
-    sample_size = 5000  # Use 5000 samples for the algorithm demonstration
-    X_train_sample = X_train[:sample_size]  # Transpose to get features as columns
-    print(f"Using sample of size: {X_train_sample.shape}")
-    
-    # Measure memory before algorithm
-    # initial_memory = print_memory_usage("Initial memory usage")
-    
-    # Time the Enhanced-LSCSS algorithm
-    k = 50  # Number of columns to select
-    T = 30  # Number of iterations
-    
-    # Track errors over iterations for visualization
-    errors = []
-    
-    # Define a wrapper to track iterations
-    def track_iterations(A, k, T):
+# Function to track  iterations
+def track_iterations(A, k, T, errors):
         n, d = A.shape
         I = set()
         E = A.copy()
@@ -371,74 +348,118 @@ def main():
                     break
         
         return A[:, final_I], final_I
-    
-    print("\nRunning Enhanced-LSCSS algorithm...")
-    start_time = time.time()
-    selected_submatrix, selected_indices = track_iterations(X_train_sample, k, T)
-    end_time = time.time()
-    
-    # Measure memory after algorithm
-    # final_memory = print_memory_usage("Final memory usage")
-    # memory_used = final_memory - initial_memory
-    
-    execution_time = end_time - start_time
-    print(f"\nExecution time: {execution_time:.2f} seconds")
-    # print(f"Memory used: {memory_used:.2f} MB")
-    
-    # Visualize selected columns
-    pixel_mask = np.zeros(784)
-    pixel_mask[selected_indices] = 1
-    visualize_columns(X, pixel_mask)
-    
-    # Compute and visualize reconstruction
-    S = selected_submatrix
-    S_pinv = pseudo_inverse(S)
-    X_reconstructed = S @ S_pinv @ X_train_sample
-    
-    # Measure reconstruction error
-    reconstruction_error = frobenius_norm(X_train_sample - X_reconstructed) / frobenius_norm(X_train_sample)
-    print(f"\nRelative reconstruction error: {reconstruction_error:.4f}")
-    
-    
-    # Visualize error curve
-    visualize_error_curve(errors, "Reconstruction Error vs Iteration")
-    
-    
-    # Get original data back to normal shape (samples × features)
-    X_train_original = X_train[:sample_size]  # Original training data (subset)
-    
-    # Extract only the selected pixels from training data
-    X_train_projected = X_train[:sample_size][:, selected_indices]
-    
-    # Project test data
-    X_test_sample = X_test[:1000]  # Use a subset of test data for speed
-    
-    # Extract only the selected pixels from test data
-    X_test_projected = X_test_sample[:, selected_indices]
-    
-    # Evaluate classification
-    class_results = evaluate_classification(
-        X_train_original, X_train_projected,
-        X_test_sample, X_test_projected,
-        y_train[:sample_size], y_test[:1000]
-    )
 
+def main():
+    # Load and preprocess MNIST
+    X, y = load_mnist()
     
-    # Print summary
-    print("\nSummary:")
-    print(f"Algorithm: Enhanced-LSCSS")
-    print(f"Dataset: MNIST (sample size: {sample_size})")
-    print(f"Columns selected: {k}")
-    print(f"Execution time: {execution_time:.2f} seconds")
-    # print(f"Memory used: {memory_used:.2f} MB")
-    print(f"Final reconstruction error: {reconstruction_error:.4f}")
-    print(f"Classification results:")
-    print(f"  - Original accuracy: {class_results['original_acc']:.4f}")
-    print(f"  - Projected accuracy: {class_results['projected_acc']:.4f}")
-    print(f"  - Speed-up: {class_results['original_time']/class_results['projected_time']:.2f}x")
-    current, peak = tracemalloc.get_traced_memory()
-    print(f"Peak memory usage: {peak / 10**6:.2f} MB")
-    tracemalloc.stop()
+    # Scale the data
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    
+    # Split data
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_scaled, y, test_size=0.2, random_state=42
+    )
+    
+    print(f"Data shapes - X_train: {X_train.shape}, X_test: {X_test.shape}")
+    
+    # For efficiency, we'll use a subset of the data
+    sample_size = 5000  # Use 5000 samples for the algorithm demonstration
+    X_train_sample = X_train[:sample_size]  # Transpose to get features as columns
+    print(f"Using sample of size: {X_train_sample.shape}")
+
+    with open("column_selection_results.txt", "w") as f:
+        f.write("Enhanced-LSCSS Algorithm Results Summary\n")
+        f.write("======================================\n\n")
+        f.write(f"Dataset: MNIST (sample size: {sample_size})\n")
+        f.write(f"Date: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        f.write("k,Execution Time (s),Reconstruction Error,Original Accuracy,Projected Accuracy,Speed-up\n")
+    
+    
+    # Measure memory before algorithm
+    # initial_memory = print_memory_usage("Initial memory usage")
+    
+    # Time the Enhanced-LSCSS algorithm
+    k_values = [5, 10, 15, 20, 30, 50, 100]  # Number of columns to select
+    
+    # Track errors over iterations for visualization
+    for k in k_values:
+
+        T = int(k * k * np.log (k))  # Number of iterations
+
+        print(f"\n==== Running with k = {k} ====")
+        errors = []
+        
+        print("\nRunning Enhanced-LSCSS algorithm...")
+        start_time = time.time()
+        selected_submatrix, selected_indices = track_iterations(X_train_sample, k, T, errors)
+        end_time = time.time()
+        
+        # Measure memory after algorithm
+        # final_memory = print_memory_usage("Final memory usage")
+        # memory_used = final_memory - initial_memory
+        
+        execution_time = end_time - start_time
+        print(f"\nExecution time: {execution_time:.2f} seconds")
+        # print(f"Memory used: {memory_used:.2f} MB")
+        
+        # Visualize selected columns
+        pixel_mask = np.zeros(784)
+        pixel_mask[selected_indices] = 1
+        visualize_columns(X, pixel_mask, title = f"Selected Pixels for k={k}")
+        
+        # Compute and visualize reconstruction
+        S = selected_submatrix
+        S_pinv = pseudo_inverse(S)
+        X_reconstructed = S @ S_pinv @ X_train_sample
+        
+        # Measure reconstruction error
+        reconstruction_error = frobenius_norm(X_train_sample - X_reconstructed) / frobenius_norm(X_train_sample)
+        print(f"\nRelative reconstruction error: {reconstruction_error:.4f}")
+        
+        
+        # Visualize error curve
+        visualize_error_curve(errors, f"Reconstruction Error vs Iteration for k={k}")
+        
+        
+        # Get original data back to normal shape (samples × features)
+        X_train_original = X_train[:sample_size]  # Original training data (subset)
+        
+        # Extract only the selected pixels from training data
+        X_train_projected = X_train[:sample_size][:, selected_indices]
+        
+        # Project test data
+        X_test_sample = X_test[:1000]  # Use a subset of test data for speed
+        
+        # Extract only the selected pixels from test data
+        X_test_projected = X_test_sample[:, selected_indices]
+        
+        # Evaluate classification
+        class_results = evaluate_classification(
+            X_train_original, X_train_projected,
+            X_test_sample, X_test_projected,
+            y_train[:sample_size], y_test[:1000]
+        )
+
+        
+        # Print summary
+        print("\nSummary:")
+        print(f"Algorithm: Enhanced-LSCSS")
+        print(f"Dataset: MNIST (sample size: {sample_size})")
+        print(f"Columns selected: {k}")
+        print(f"Execution time: {execution_time:.2f} seconds")
+        # print(f"Memory used: {memory_used:.2f} MB")
+        print(f"Final reconstruction error: {reconstruction_error:.4f}")
+        print(f"Classification results:")
+        print(f"  - Original accuracy: {class_results['original_acc']:.4f}")
+        print(f"  - Projected accuracy: {class_results['projected_acc']:.4f}")
+        print(f"  - Speed-up: {class_results['original_time']/class_results['projected_time']:.2f}x")
+        current, peak = tracemalloc.get_traced_memory()
+        print(f"Peak memory usage: {peak / 10**6:.2f} MB")
+        with open("column_selection_results.txt", "a") as f:
+            f.write(f"{k},{execution_time:.2f},{reconstruction_error:.4f},{class_results['original_acc']:.4f},{class_results['projected_acc']:.4f},{class_results['original_time']/class_results['projected_time']:.2f}\n")
+        tracemalloc.stop()
 
 if __name__ == "__main__":
     main()
